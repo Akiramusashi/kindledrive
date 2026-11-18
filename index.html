@@ -1264,21 +1264,49 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 
 
 /* ---------------------------------------------------------------
-   Google Drive 4 Pastas + Cloud Sync (OAuth2 + Drive API v3)
+   Google Drive Pastas + Pastas Personalizadas + Cloud Sync
 ---------------------------------------------------------------- */
 const GD_CLIENT_ID = '458685930758-it2f3t53mtkkenjdd17h3lgvv5uicnue.apps.googleusercontent.com';
 const GD_SCOPES = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.appdata';
-const GD_FOLDERS = [
-  { id: '1CEvFmeNc3Crz0tsNonHB7J4vChXMvcZw', name: '📚 Pasta 1', desc: 'Livros e PDFs (Pasta 1)' },
-  { id: '1w5qHGkx6qXuXW2zQZT-qfb6Wq6w3Yqql', name: '📘 Pasta 2', desc: 'Livros e PDFs (Pasta 2)' },
-  { id: '1neQYexWV_tcj5OfsnMfMlRCxz3gn24jc', name: '📙 Pasta 3', desc: 'Livros e PDFs (Pasta 3)' },
-  { id: '0B7Ddk7etOJK2djBtdmhyeS1nanM', resourceKey: '0-V4ml1oA_pq6kogLZhME8bg', name: '🗂️ Pasta 4 (Acervo)', desc: 'Pasta com ResourceKey' }
+const DEFAULT_GD_FOLDERS = [
+  { id: '1CEvFmeNc3Crz0tsNonHB7J4vChXMvcZw', name: '📚 Pasta 1', desc: 'Livros e PDFs (Pasta 1)', fixed: true },
+  { id: '1w5qHGkx6qXuXW2zQZT-qfb6Wq6w3Yqql', name: '📘 Pasta 2', desc: 'Livros e PDFs (Pasta 2)', fixed: true },
+  { id: '1neQYexWV_tcj5OfsnMfMlRCxz3gn24jc', name: '📙 Pasta 3', desc: 'Livros e PDFs (Pasta 3)', fixed: true },
+  { id: '0B7Ddk7etOJK2djBtdmhyeS1nanM', resourceKey: '0-V4ml1oA_pq6kogLZhME8bg', name: '🗂️ Pasta 4 (Acervo)', desc: 'Pasta com ResourceKey', fixed: true }
 ];
 
-let gdToken = sessionStorage.getItem('kd_gd_token') || null;
+function getCustomFolders() {
+  try {
+    const raw = localStorage.getItem('kd_custom_drive_folders');
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+function saveCustomFolders(list) {
+  try { localStorage.setItem('kd_custom_drive_folders', JSON.stringify(list)); } catch (e) {}
+}
+function getAllDriveFolders() {
+  return [...DEFAULT_GD_FOLDERS, ...getCustomFolders()];
+}
+
+function parseDriveFolderLink(input) {
+  const s = String(input || '').trim();
+  if (!s) return null;
+  let id = null, resourceKey = null;
+  const mFolder = s.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  const mIdParam = s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  const mRk = s.match(/[?&]resourcekey=([a-zA-Z0-9_-]+)/i);
+  if (mFolder) id = mFolder[1];
+  else if (mIdParam) id = mIdParam[1];
+  else if (/^[a-zA-Z0-9_-]{15,}$/.test(s)) id = s;
+  if (mRk) resourceKey = mRk[1];
+  if (!id) return null;
+  return { id, resourceKey };
+}
+
+let gdToken = localStorage.getItem('kd_gd_token') || null;
 let gdTokenClient = null;
-let gdActiveRoot = GD_FOLDERS[0];
-let gdPath = [GD_FOLDERS[0]];
+let gdActiveRoot = getAllDriveFolders()[0];
+let gdPath = [gdActiveRoot];
 let gdCurrentFiles = [];
 
 function gdFolderUrl(f) {
@@ -1300,7 +1328,7 @@ function updateGdStatusUI() {
   const lbl = $('drive-conn-label');
   if (lbl) {
     lbl.textContent = connected
-      ? 'Conectado à API oficial do Google Drive (importação com 1 clique ativa)'
+      ? 'Conectado à API oficial do Google Drive (importação com 1 clique ativa · somente leitura nas pastas)'
       : 'Desconectado — clique em "Conectar Google Drive" para listar e baixar livros direto no app';
     lbl.style.color = connected ? 'var(--leisure)' : 'var(--fg)';
   }
@@ -1312,7 +1340,7 @@ function updateGdStatusUI() {
 
 function connectGoogleDrive(afterConnect) {
   if (location.protocol === 'file:') {
-    toast('Para o login Google funcionar, acesse pelo seu link https://josejanailson199-spec.github.io/kindledrive/', 7000);
+    toast('Para o login Google funcionar, acesse pelo link do seu GitHub Pages.', 7000);
     return;
   }
   if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
@@ -1326,7 +1354,7 @@ function connectGoogleDrive(afterConnect) {
       callback: (resp) => {
         if (resp && resp.access_token) {
           gdToken = resp.access_token;
-          sessionStorage.setItem('kd_gd_token', gdToken);
+          localStorage.setItem('kd_gd_token', gdToken);
           updateGdStatusUI();
           toast('Google Drive conectado com sucesso!');
           loadGdFolder(gdPath[gdPath.length - 1]);
@@ -1338,22 +1366,103 @@ function connectGoogleDrive(afterConnect) {
   gdTokenClient.requestAccessToken({ prompt: '' });
 }
 
+async function promptAddDriveFolder() {
+  const link = await dialog({
+    title: 'Adicionar pasta do Google Drive',
+    message: 'Cole o link da pasta compartilhada do Google Drive (ou o ID da pasta). Ela ficará salva no seu navegador:',
+    input: '',
+    ok: 'Continuar'
+  });
+  if (!link) return;
+  const parsed = parseDriveFolderLink(link);
+  if (!parsed) {
+    toast('Link inválido. Cole um link do tipo https://drive.google.com/drive/folders/...', 5000);
+    return;
+  }
+  const all = getAllDriveFolders();
+  if (all.some((f) => f.id === parsed.id)) {
+    toast('Essa pasta já está na sua lista!');
+    return;
+  }
+  const custom = getCustomFolders();
+  const name = await dialog({
+    title: 'Nome para a pasta',
+    message: 'Como você quer identificar essa pasta nas abas?',
+    input: `📂 Pasta Extra ${custom.length + 1}`,
+    ok: 'Adicionar pasta'
+  });
+  if (!name) return;
+  const newFolder = {
+    id: parsed.id,
+    resourceKey: parsed.resourceKey || undefined,
+    name: name.trim() || `📂 Pasta Extra ${custom.length + 1}`,
+    desc: 'Pasta adicionada por link',
+    fixed: false
+  };
+  custom.push(newFolder);
+  saveCustomFolders(custom);
+  gdActiveRoot = newFolder;
+  gdPath = [newFolder];
+  toast(`Pasta "${newFolder.name}" adicionada!`);
+  renderDriveView();
+}
+
 function renderDriveView() {
   updateGdStatusUI();
+  const allFolders = getAllDriveFolders();
+  if (!allFolders.some((f) => f.id === gdActiveRoot.id)) {
+    gdActiveRoot = allFolders[0];
+    gdPath = [gdActiveRoot];
+  }
+
   const chips = $('drive-folder-chips');
-  chips.innerHTML = GD_FOLDERS.map((f, i) => `
-    <button class="chip ${gdActiveRoot.id === f.id ? 'is-active' : ''}" data-root-idx="${i}">
-      ${esc(f.name)}
+  chips.innerHTML = allFolders.map((f, i) => `
+    <div class="inline-flex items-center">
+      <button class="chip ${gdActiveRoot.id === f.id ? 'is-active' : ''} ${!f.fixed ? '!rounded-r-none !pr-2.5' : ''}" data-root-idx="${i}">
+        ${esc(f.name)}
+      </button>
+      ${!f.fixed ? `<button class="chip ${gdActiveRoot.id === f.id ? 'is-active' : ''} !rounded-l-none !border-l-0 !pl-1.5 !pr-2.5 hover:text-red-400" data-del-folder="${esc(f.id)}" title="Remover pasta adicionada">✕</button>` : ''}
+    </div>
+  `).join('') + `
+    <button id="drive-add-folder-btn" class="chip !border-dashed hover:border-[var(--accent)] hover:text-[var(--fg)]" style="border-color: var(--accent); color: var(--accent);">
+      + Adicionar pasta por link
     </button>
-  `).join('');
+  `;
+
   chips.querySelectorAll('[data-root-idx]').forEach((btn) => {
     btn.onclick = () => {
-      const f = GD_FOLDERS[+btn.dataset.rootIdx];
+      const f = allFolders[+btn.dataset.rootIdx];
       gdActiveRoot = f;
       gdPath = [f];
       renderDriveView();
     };
   });
+
+  chips.querySelectorAll('[data-del-folder]').forEach((btn) => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const fid = btn.dataset.delFolder;
+      const target = getCustomFolders().find((x) => x.id === fid);
+      if (!target) return;
+      const ok = await dialog({
+        title: 'Remover pasta adicionada?',
+        message: `A aba "${target.name}" será removida da lista deste navegador (nada muda no Google Drive).`,
+        ok: 'Remover',
+        danger: true
+      });
+      if (!ok) return;
+      const updated = getCustomFolders().filter((x) => x.id !== fid);
+      saveCustomFolders(updated);
+      if (gdActiveRoot.id === fid) {
+        gdActiveRoot = DEFAULT_GD_FOLDERS[0];
+        gdPath = [gdActiveRoot];
+      }
+      renderDriveView();
+    };
+  });
+
+  const addBtn = $('drive-add-folder-btn');
+  if (addBtn) addBtn.onclick = () => promptAddDriveFolder();
 
   const cur = gdPath[gdPath.length - 1];
   $('drive-open-ext').href = gdFolderUrl(cur);
@@ -1377,21 +1486,23 @@ function renderDriveView() {
 
 async function loadGdFolder(folder) {
   const box = $('drive-files-box');
+  const allFolders = getAllDriveFolders();
   if (!gdToken) {
     box.innerHTML = `
       <div class="surface rounded-2xl p-6 sm:p-8 text-center space-y-5">
         <div class="max-w-lg mx-auto space-y-2">
-          <h3 class="serif text-xl font-semibold">Acesse ou importe livros das suas 4 Pastas</h3>
+          <h3 class="serif text-xl font-semibold">Acesse ou importe livros das Pastas do Drive</h3>
           <p class="muted text-[13px] leading-relaxed">
-            Conecte sua conta Google para ver todos os PDFs e CBZs de <b>${esc(folder.name)}</b> aqui dentro e importar com 1 clique, ou abra as pastas diretamente no Google Drive abaixo:
+            Conecte sua conta Google para ver todos os PDFs e CBZs de <b>${esc(folder.name)}</b> aqui dentro e importar com 1 clique (modo 100% somente-leitura), ou adicione qualquer pasta pública por link:
           </p>
         </div>
         <div class="flex flex-wrap justify-center gap-3">
           <button id="gd-cta-connect" class="btn btn-primary !py-2.5 !px-5">🔑 Conectar Conta Google Agora</button>
+          <button id="gd-cta-add-link" class="btn btn-ghost !py-2.5 !px-5">+ Adicionar pasta por link</button>
           <a href="${gdFolderUrl(folder)}" target="_blank" rel="noopener" class="btn btn-ghost !py-2.5 !px-5">Abrir ${esc(folder.name)} no Drive ↗</a>
         </div>
         <div class="grid sm:grid-cols-2 gap-3 pt-4 text-left max-w-2xl mx-auto">
-          ${GD_FOLDERS.map((f) => `
+          ${allFolders.map((f) => `
             <a href="${gdFolderUrl(f)}" target="_blank" rel="noopener" class="drive-row">
               <div>
                 <div class="font-semibold text-[13.5px]">${esc(f.name)}</div>
@@ -1404,6 +1515,8 @@ async function loadGdFolder(folder) {
       </div>`;
     const cBtn = $('gd-cta-connect');
     if (cBtn) cBtn.onclick = () => connectGoogleDrive();
+    const aBtn = $('gd-cta-add-link');
+    if (aBtn) aBtn.onclick = () => promptAddDriveFolder();
     return;
   }
 
@@ -1416,18 +1529,42 @@ async function loadGdFolder(folder) {
     const q = encodeURIComponent(`'${folder.id}' in parents and trashed = false`);
     const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,mimeType,size,webViewLink,resourceKey)&orderBy=folder,name&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true`;
     const res = await fetch(url, { headers });
-    if (res.status === 401 || res.status === 403) {
+    const data = await res.json().catch(() => ({}));
+
+    if (res.status === 401) {
       gdToken = null;
-      sessionStorage.removeItem('kd_gd_token');
+      localStorage.removeItem('kd_gd_token');
       updateGdStatusUI();
+      toast('Sessão do Google expirou. Clique em Conectar novamente.');
       loadGdFolder(folder);
       return;
     }
-    const data = await res.json();
+
+    if (!res.ok) {
+      const errMsg = (data && data.error && data.error.message) ? data.error.message : `Erro HTTP ${res.status}`;
+      box.innerHTML = `
+        <div class="surface rounded-2xl p-6 sm:p-8 space-y-4">
+          <div class="flex items-start gap-3">
+            <span class="text-2xl">⚠️</span>
+            <div class="space-y-1">
+              <h3 class="font-semibold text-[15px]" style="color: var(--accent);">Não foi possível listar esta pasta (${res.status})</h3>
+              <p class="text-[13px] muted leading-relaxed">Detalhe: <code class="px-1.5 py-0.5 rounded bg-[var(--surface-2)] text-[var(--fg)]">${esc(errMsg)}</code></p>
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-2 pt-1">
+            <button id="gd-retry-btn" class="btn btn-primary">🔄 Tentar Novamente</button>
+            <a href="${gdFolderUrl(folder)}" target="_blank" rel="noopener" class="btn btn-ghost">Abrir ${esc(folder.name)} direto no Drive ↗</a>
+          </div>
+        </div>`;
+      const rBtn = $('gd-retry-btn');
+      if (rBtn) rBtn.onclick = () => loadGdFolder(folder);
+      return;
+    }
+
     gdCurrentFiles = data.files || [];
     renderGdFileRows(folder);
   } catch (e) {
-    box.innerHTML = `<div class="surface rounded-2xl p-6 text-center text-red-400 text-[13px]">Erro ao listar pasta: ${esc(e.message)}</div>`;
+    box.innerHTML = `<div class="surface rounded-2xl p-6 text-center text-red-400 text-[13px]">Erro de rede ao listar pasta: ${esc(e.message)}</div>`;
   }
 }
 
@@ -1436,7 +1573,17 @@ function renderGdFileRows(folder) {
   const q = ($('drive-search').value || '').trim().toLowerCase();
   const list = gdCurrentFiles.filter((f) => !q || f.name.toLowerCase().includes(q));
   if (!list.length) {
-    box.innerHTML = `<div class="surface rounded-2xl p-8 text-center muted text-[13px]">Nenhum arquivo encontrado nesta pasta. <a href="${gdFolderUrl(folder)}" target="_blank" class="underline" style="color:var(--accent);">Abrir no Google Drive ↗</a></div>`;
+    box.innerHTML = `
+      <div class="surface rounded-2xl p-8 text-center space-y-3">
+        <div class="text-[14px] font-semibold">Nenhum arquivo listado diretamente em ${esc(folder.name)}</div>
+        <p class="muted text-[13px] max-w-md mx-auto">Se esta pasta é um link público compartilhado, clique abaixo para abri-la uma vez no Drive e depois clique em Recarregar:</p>
+        <div class="flex justify-center gap-2 pt-1">
+          <a href="${gdFolderUrl(folder)}" target="_blank" rel="noopener" class="btn btn-primary">1. Abrir ${esc(folder.name)} no Drive ↗</a>
+          <button id="gd-reload-empty" class="btn btn-ghost">2. Recarregar lista 🔄</button>
+        </div>
+      </div>`;
+    const rl = $('gd-reload-empty');
+    if (rl) rl.onclick = () => loadGdFolder(folder);
     return;
   }
   box.innerHTML = list.map((f, i) => {
@@ -1501,8 +1648,9 @@ function renderGdFileRows(folder) {
 
 $('drive-search').addEventListener('input', () => renderGdFileRows(gdPath[gdPath.length - 1]));
 $('drive-auth-btn').onclick = () => connectGoogleDrive();
+updateGdStatusUI();
 
-// Sincronização real na nuvem via appDataFolder do Google Drive
+// Sincronização real na nuvem via appDataFolder individual de cada usuário
 async function syncWithDriveCloud() {
   if (!gdToken) {
     connectGoogleDrive(() => syncWithDriveCloud());
@@ -1522,7 +1670,6 @@ async function syncWithDriveCloud() {
       const dlRes = await fetch(`https://www.googleapis.com/drive/v3/files/${existingFile.id}?alt=media`, { headers });
       if (dlRes.ok) {
         const remote = await dlRes.json();
-        // Mescla progresso de páginas (mantém a página mais avançada ou mais recente)
         if (Array.isArray(remote.books)) {
           remote.books.forEach((rb) => {
             const lb = S.books.find((x) => x.fileName === rb.fileName || x.title === rb.title);
@@ -1533,13 +1680,11 @@ async function syncWithDriveCloud() {
             }
           });
         }
-        // Mescla notas sem duplicar
         if (Array.isArray(remote.notes)) {
           remote.notes.forEach((rn) => {
             if (!S.notes.some((ln) => ln.id === rn.id)) S.notes.push(rn);
           });
         }
-        // Mescla metas e log diário
         if (remote.log) {
           Object.keys(remote.log).forEach((k) => {
             if (!S.log[k]) S.log[k] = remote.log[k];
@@ -1550,13 +1695,26 @@ async function syncWithDriveCloud() {
             }
           });
         }
+        if (Array.isArray(remote.customFolders)) {
+          const localCustom = getCustomFolders();
+          remote.customFolders.forEach((rf) => {
+            if (rf && rf.id && !localCustom.some((lf) => lf.id === rf.id)) localCustom.push(rf);
+          });
+          saveCustomFolders(localCustom);
+        }
         save();
         renderAll();
       }
     }
 
-    // Envia estado consolidado para a nuvem
-    const payload = JSON.stringify({ books: S.books, notes: S.notes, log: S.log, goals: S.goals, updatedAt: Date.now() });
+    const payload = JSON.stringify({
+      books: S.books,
+      notes: S.notes,
+      log: S.log,
+      goals: S.goals,
+      customFolders: getCustomFolders(),
+      updatedAt: Date.now()
+    });
     if (existingFile) {
       await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=media`, {
         method: 'PATCH',
@@ -1577,7 +1735,7 @@ async function syncWithDriveCloud() {
 
     localStorage.setItem('kd_last_cloud_sync', String(Date.now()));
     updateGdStatusUI();
-    toast('Progresso, notas e metas sincronizados na nuvem!');
+    toast('Progresso, notas e pastas extras sincronizados na nuvem!');
   } catch (e) {
     console.error(e);
     toast('Erro ao sincronizar na nuvem: ' + e.message, 5000);
