@@ -1269,10 +1269,13 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 const GD_CLIENT_ID = '458685930758-it2f3t53mtkkenjdd17h3lgvv5uicnue.apps.googleusercontent.com';
 const GD_SCOPES = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.appdata';
 const DEFAULT_GD_FOLDERS = [
-  { id: '1CEvFmeNc3Crz0tsNonHB7J4vChXMvcZw', name: '📚 Pasta 1', desc: 'Livros e PDFs (Pasta 1)', fixed: true },
-  { id: '1w5qHGkx6qXuXW2zQZT-qfb6Wq6w3Yqql', name: '📘 Pasta 2', desc: 'Livros e PDFs (Pasta 2)', fixed: true },
-  { id: '1neQYexWV_tcj5OfsnMfMlRCxz3gn24jc', name: '📙 Pasta 3', desc: 'Livros e PDFs (Pasta 3)', fixed: true },
-  { id: '0B7Ddk7etOJK2djBtdmhyeS1nanM', resourceKey: '0-V4ml1oA_pq6kogLZhME8bg', name: '🗂️ Pasta 4 (Acervo)', desc: 'Pasta com ResourceKey', fixed: true }
+  { id: '1CEvFmeNc3Crz0tsNonHB7J4vChXMvcZw', name: '⚛️ Exatas & Física', desc: 'Cálculo, Física Superior, Matemática e Artigos', fixed: true },
+  { id: '1w5qHGkx6qXuXW2zQZT-qfb6Wq6w3Yqql', name: '📖 Literatura & Clássicos', desc: 'Romances, Fantasia e Clássicos Mundiais', fixed: true },
+  { id: '1neQYexWV_tcj5OfsnMfMlRCxz3gn24jc', name: '📘 Didáticos & Vestibular', desc: 'Apostilas, Questões e Ensino Médio', fixed: true },
+  { id: '0B7Ddk7etOJK2djBtdmhyeS1nanM', resourceKey: '0-V4ml1oA_pq6kogLZhME8bg', name: '🎓 Acervo UFABC', desc: 'Disciplinas do BC&T e Específicas', fixed: true },
+  { id: '1-7iBxPyGAiZHrh7zdCoMEP29kmBExAN3', name: '🧪 Química (Acervo)', desc: 'Livros Técnicos e de Graduação em Química', fixed: true },
+  { id: '1FCy2RlXhDF7FxinFva9YNKpMlvPCmyZL', name: '🏛️ Biblioteca Soyuz', desc: 'Acervo Geral e Ciências Humanas', fixed: true },
+  { id: '1c7TXk7YmfvfhfRjkgXhXh9rAOHVgWsIC', name: '📝 Simulados & Provas', desc: 'Provas Antigas e Simulados de Treino', fixed: true }
 ];
 
 function getCustomFolders() {
